@@ -25,6 +25,22 @@ function handleNotification(body) {
   console.log("📬 Apple Notification Received");
   console.log("-----------------------------------------------------");
 
+  // ✅ Add this Version-1 fallback FIRST
+  if (body.latest_receipt_info || body.unified_receipt) {
+    const info = body.latest_receipt_info || body.unified_receipt?.latest_receipt_info;
+    if (Array.isArray(info) && info.length > 0) {
+      const tx = info[0];
+      console.log("✅ [V1] Transaction ID:", tx.transaction_id);
+      console.log("Original Transaction ID:", tx.original_transaction_id);
+      console.log("Product ID:", tx.product_id);
+      console.log("Expires Date:", tx.expires_date_ms || tx.expires_date);
+    } else {
+      console.log("⚠️ V1 notification with no in_app items:", JSON.stringify(body, null, 2));
+    }
+    console.log("=====================================================");
+    return; // stop here, since we handled it
+  }
+  
   const signedPayload = body.data?.signedPayload;
   if (!signedPayload) {
     console.log("⚠️ No signedPayload field found in body.");
