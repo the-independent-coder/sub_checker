@@ -1,48 +1,46 @@
 import express from "express";
 import bodyParser from "body-parser";
 import jwt from "jsonwebtoken";
-import axios from "axios";
 
 const app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "1mb" }));
 
-// --- credentials will come from Render environment variables ---
-const ISSUER_ID = process.env.ISSUER_ID;
-const KEY_ID = process.env.KEY_ID;
-const BUNDLE_ID = process.env.BUNDLE_ID;
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
-
-// create JWT for Apple API
-function generateToken() {
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: ISSUER_ID,
-    iat: now,
-    exp: now + 1800,       // valid for 30 minutes
-    aud: "appstoreconnect-v1",
-    bid: BUNDLE_ID
-  };
-  const header = { alg: "ES256", kid: KEY_ID, typ: "JWT" };
-  return jwt.sign(payload, PRIVATE_KEY, { algorithm: "ES256", header });
-}
-
-// verify endpoint
-app.post("/verify", async (req, res) => {
-  const { transactionId } = req.body;
-  if (!transactionId)
-    return res.status(400).json({ error: "Missing transactionId" });
-
-  try {
-    const token = generateToken();
-    const url = `https://api.storekit.itunes.apple.com/inApps/v1/subscriptions/${transactionId}`;
-    const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    res.json(response.data);
-  } catch (err) {
-    res.status(500).json({ error: err.message, details: err.response?.data });
-  }
+// Endpoint for sandbox notifications
+app.post("/appstore/sandbox", async (req, res) => {
+  console.log("📩 Notification received (sandbox)");
+  handleNotification(req.body);
+  res.sendStatus(200);
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log("Server running on port", port));
+// Endpoint for production notifications
+app.post("/appstore/notifications", async (req, res) => {
+  console.log("📩 Notification received (production)");
+  handleNotification(req.body);
+  res.sendStatus(200);
+});
+
+function handleNotification(body) {
+  console.log("NotificationType:", body.notificationType);
+
+  const signedTx = body.data?.signedTransactionInfo;
+  if (!signedTx) {
+    console.log("No signedTransactionInfo");
+    return;
+  }
+
+  // Decode JWS without verification (Apple’s payload is signed by Apple)
+  const parts = signedTx.split(".");
+  const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
+
+  console.log("Transaction ID:", payload.transactionId);
+  console.log("Original Transaction ID:", payload.originalTransactionId);
+  console.log("Product ID:", payload.productId);
+  console.log("Expires Date:", payload.expiresDate);
+  console.log("Environment:", payload.environment);
+
+  // Here you’d store it in your database, e.g.:
+  // db.saveSubscription(payload.originalTransactionId, payload.expiresDate, payload.productId);
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Listening on port ${PORT}`));
