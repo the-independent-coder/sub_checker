@@ -24,23 +24,51 @@ function decodeJWSPayload(jws) {
 function handleNotification(body) {
   console.log("------------------------------------------------");
   console.log("📬 Apple Notification Type:", body.notificationType || "(none)");
-  console.log("Notification Version:", body.version || "1.0 (legacy)");
+  console.log("Notification Version:", body.version || "2.0");
   console.log("------------------------------------------------");
 
-  // ---- New format (Version 2) ----
+  // Helper to decode any JWS
+  const decode = (jws) => {
+    try {
+      const [, payloadBase64] = jws.split(".");
+      return JSON.parse(Buffer.from(payloadBase64, "base64").toString("utf8"));
+    } catch (err) {
+      console.error("❌ Failed to decode JWS:", err);
+      return null;
+    }
+  };
+
+  // 1️⃣ Newest format: data.signedPayload (envelope)
+  const signedPayload = body.data?.signedPayload;
+  if (signedPayload) {
+    const payload = decode(signedPayload);
+    if (payload?.data) {
+      const tx = decode(payload.data.signedTransactionInfo || "");
+      if (tx) {
+        console.log("✅ Transaction ID:", tx.transactionId);
+        console.log("Original Transaction ID:", tx.originalTransactionId);
+        console.log("Product ID:", tx.productId);
+        console.log("Expires Date:", tx.expiresDate);
+        return;
+      }
+      console.log("ℹ️ signedPayload has no transaction info; full payload:");
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+  }
+
+  // 2️⃣ Normal V2 direct fields
   const signedTx = body.data?.signedTransactionInfo;
   if (signedTx) {
-    const parts = signedTx.split(".");
-    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
-    console.log("✅ [V2] Transaction ID:", payload.transactionId);
-    console.log("Original Transaction ID:", payload.originalTransactionId);
-    console.log("Product ID:", payload.productId);
-    console.log("Expires Date:", payload.expiresDate);
+    const tx = decode(signedTx);
+    console.log("✅ Transaction ID:", tx.transactionId);
+    console.log("Original Transaction ID:", tx.originalTransactionId);
+    console.log("Product ID:", tx.productId);
+    console.log("Expires Date:", tx.expiresDate);
     return;
   }
 
-  // ---- Legacy format (Version 1) ----
-  // These notifications look just like verifyReceipt JSON
+  // 3️⃣ Fallback for legacy (V1) notifications
   const info = body.latest_receipt_info || body.unified_receipt?.latest_receipt_info;
   if (Array.isArray(info) && info.length > 0) {
     const item = info[0];
