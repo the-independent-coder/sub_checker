@@ -1,49 +1,72 @@
-// server.js
 import express from "express";
 import bodyParser from "body-parser";
-import jwt from "jsonwebtoken";
-import axios from "axios";
-import fs from "fs";
 
 const app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "1mb" }));
 
-// 🔹 Replace these with your actual App Store Connect credentials
-const ISSUER_ID = "fa542857-e074-400a-b7ee-bc635ee85c4d";
-const KEY_ID = "V6D4W794J2";
-const BUNDLE_ID = "com.theindependentcoder.Warehouse";
-const PRIVATE_KEY = fs.readFileSync("./AuthKey_V6D4W794J2.p8", "utf8");
-
-// Generate JWT for Apple API
-function generateToken() {
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: ISSUER_ID,
-    iat: now,
-    exp: now + 1800, // valid for 30 minutes
-    aud: "appstoreconnect-v1",
-    bid: BUNDLE_ID
-  };
-  const header = { alg: "ES256", kid: KEY_ID, typ: "JWT" };
-  return jwt.sign(payload, PRIVATE_KEY, { algorithm: "ES256", header });
+// -------------------
+// Helper: decode JWT payload
+// -------------------
+function decodeJWSPayload(jws) {
+  try {
+    const parts = jws.split(".");
+    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
+    return payload;
+  } catch (err) {
+    console.error("❌ Failed to decode JWS:", err);
+    return null;
+  }
 }
 
-// POST /verify  body: { "transactionId": "XXXX" }
-app.post("/verify", async (req, res) => {
-  const { transactionId } = req.body;
-  if (!transactionId) return res.status(400).json({ error: "Missing transactionId" });
+// -------------------
+// Shared function to handle Apple notification bodies
+// -------------------
+function handleNotification(body) {
+  console.log("------------------------------------------------");
+  console.log("📬 Apple Notification Type:", body.notificationType);
+  console.log("Notification Version:", body.version || "(unknown)");
+  console.log("------------------------------------------------");
 
-  const token = generateToken();
-  const url = `https://api.storekit.itunes.apple.com/inApps/v1/subscriptions/${transactionId}`;
-
-  try {
-    const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    res.json(response.data);
-  } catch (err) {
-    res.status(500).json({ error: err.message, details: err.response?.data });
+  // Version 2 (new) notifications include signedTransactionInfo
+  const signedTx = body.data?.signedTransactionInfo;
+  if (signedTx) {
+    const payload = decodeJWSPayload(signedTx);
+    if (payload) {
+      console.log("✅ Transaction ID:", payload.transactionId);
+      console.log("Original Transaction ID:", payload.originalTransactionId);
+      console.log("Product ID:", payload.productId);
+      console.log("Expires Date:", payload.expiresDate);
+    } else {
+      console.log("❌ Could not decode signedTransactionInfo");
+    }
+  } else if (body.data?.signedRenewalInfo) {
+    console.log("ℹ️ Notification has signedRenewalInfo only (no transaction)");
+  } else {
+    console.log("⚠️ No signedTransactionInfo found (probably TEST or V1 type)");
   }
+
+  console.log("Full body:", JSON.stringify(body, null, 2));
+  console.log("------------------------------------------------");
+}
+
+// -------------------
+// Sandbox endpoint
+// -------------------
+app.post("/appstore/sandbox", (req, res) => {
+  handleNotification(req.body);
+  res.sendStatus(200);
 });
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+// -------------------
+// Production endpoint
+// -------------------
+app.post("/appstore/notifications", (req, res) => {
+  handleNotification(req.body);
+  res.sendStatus(200);
+});
+
+// -------------------
+// Start server
+// -------------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Apple Server running on port ${PORT}`));
