@@ -9,10 +9,10 @@ const app = express();
 app.use(bodyParser.json());
 
 // 🔹 Replace these with your actual App Store Connect credentials
-const ISSUER_ID = "YOUR_ISSUER_ID";
-const KEY_ID = "YOUR_KEY_ID";
-const BUNDLE_ID = "com.yourcompany.yourapp";
-const PRIVATE_KEY = fs.readFileSync("./AuthKey_YOURKEYID.p8", "utf8");
+const ISSUER_ID = "fa542857-e074-400a-b7ee-bc635ee85c4d";
+const KEY_ID = "V6D4W794J2";
+const BUNDLE_ID = "com.theindependentcoder.Warehouse";
+const PRIVATE_KEY = fs.readFileSync("./AuthKey_V6D4W794J2.p8", "utf8");
 
 // Generate JWT for Apple API
 function generateToken() {
